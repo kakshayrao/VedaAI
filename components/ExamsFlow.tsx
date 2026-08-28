@@ -8,23 +8,46 @@ import { ExtractingState } from "@/components/ExtractingState";
 import { QuestionList } from "@/components/QuestionList";
 import { AnswerSheetViewer } from "@/components/AnswerSheetViewer";
 import { AnswerPreviewCard } from "@/components/AnswerPreviewCard";
-import { UnmatchedPanel, needsReviewStatus } from "@/components/UnmatchedPanel";
+import { UnmatchedPanel } from "@/components/UnmatchedPanel";
+import { needsReviewStatus } from "@/lib/map-answers";
 import { MappingCorrection } from "@/components/MappingCorrection";
 import { GradingSummary } from "@/components/GradingSummary";
+import { BackLink } from "@/components/BackLink";
 import type { AnswerRegion, JobState, JobSummary } from "@/lib/types";
 import { displayQuestionLabel } from "@/lib/questions/postprocess";
 import { pushNotification } from "@/lib/local-store";
+import { uploadFileError, uploadJobFile } from "@/lib/client-upload";
 
 type Phase = "upload" | "extracting" | "results";
+
+export type ExamJobContext = {
+  examId: string;
+  classroomId: string;
+  studentName?: string;
+  examTitle?: string;
+  className?: string;
+};
 
 export function ExamsFlow({
   initialJobId,
   showPastJobs = true,
+  examContext,
 }: {
   initialJobId?: string;
   showPastJobs?: boolean;
+  /** When opened from a classroom exam roster — back lands on that roster. */
+  examContext?: ExamJobContext;
 }) {
   const router = useRouter();
+  const backHref = examContext
+    ? `/classroom/${examContext.classroomId}/exams/${examContext.examId}`
+    : "/exams";
+  const backLabel = examContext ? "Back to exam" : "Back to Exams";
+  const contextLine = examContext
+    ? [examContext.studentName, examContext.examTitle, examContext.className]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
   const mapNewInputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>(initialJobId ? "extracting" : "upload");
   const [busy, setBusy] = useState(false);
@@ -58,16 +81,7 @@ export function ExamsFlow({
     setError(null);
     try {
       const jobId = crypto.randomUUID();
-      const upload = async (file: File, kind: string) => {
-        const fd = new FormData();
-        fd.set("file", file);
-        fd.set("jobId", jobId);
-        fd.set("kind", kind);
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
-        if (!res.ok) throw new Error(await res.text());
-        return res.json() as Promise<{ url: string; name: string }>;
-      };
-      const a = await upload(payload.answer, "answer");
+      const a = await uploadJobFile(jobId, "answer", payload.answer);
       const body =
         payload.mode === "saved"
           ? {
@@ -77,7 +91,7 @@ export function ExamsFlow({
               questionSetId: payload.questionSetId,
             }
           : await (async () => {
-              const q = await upload(payload.question, "question");
+              const q = await uploadJobFile(jobId, "question", payload.question);
               return {
                 jobId,
                 questionUrl: q.url,
@@ -219,6 +233,16 @@ export function ExamsFlow({
     [result]
   );
 
+  // Esc cancels draw mode (the remap dialog re-appears since reviewAnswerId is kept)
+  useEffect(() => {
+    if (!drawMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawMode]);
+
   const patchAnswer = async (answerId: string, body: Record<string, unknown>) => {
     if (!job) return;
     const res = await fetch(`/api/jobs/${job.id}/answers/${answerId}`, {
@@ -267,33 +291,56 @@ export function ExamsFlow({
       )}
 
       {phase === "extracting" && (
-        <ExtractingState
-          message={job?.message}
-          error={job?.status === "error" ? job.error || error : null}
-          resumable={job?.resumable}
-          progress={job?.progress}
-          lastQuestionPage={job?.checkpoint?.lastQuestionPage}
-          questionPageCount={job?.checkpoint?.questionPages?.length}
-          lastAnswerPage={job?.checkpoint?.lastAnswerPage}
-          answerPageCount={job?.checkpoint?.answerPages?.length}
-          questions={job?.result?.questions}
-          answers={job?.result?.answers}
-          onResume={resume}
-          resumeBusy={resumeBusy}
-          onBackToUpload={() => {
-            setPhase("upload");
-            setError(null);
-            setJob(null);
-            router.replace("/exams");
-          }}
-        />
+        <div>
+          <div className="border-b border-gray-100 bg-white px-4 py-3">
+            <BackLink href={backHref}>{backLabel}</BackLink>
+            {contextLine && (
+              <p className="mt-1 text-sm font-medium text-gray-800">{contextLine}</p>
+            )}
+          </div>
+          <ExtractingState
+            message={job?.message}
+            error={job?.status === "error" ? job.error || error : null}
+            resumable={job?.resumable}
+            progress={job?.progress}
+            lastQuestionPage={job?.checkpoint?.lastQuestionPage}
+            questionPageCount={job?.checkpoint?.questionPages?.length}
+            lastAnswerPage={job?.checkpoint?.lastAnswerPage}
+            answerPageCount={job?.checkpoint?.answerPages?.length}
+            questions={job?.result?.questions}
+            answers={job?.result?.answers}
+            onResume={resume}
+            resumeBusy={resumeBusy}
+            backLabel={examContext ? "Back to exam" : "Back to upload"}
+            onBackToUpload={() => {
+              if (examContext) {
+                router.push(backHref);
+                return;
+              }
+              setPhase("upload");
+              setError(null);
+              setJob(null);
+              router.replace("/exams");
+            }}
+          />
+        </div>
       )}
 
       {phase === "results" && result && (
         <div className="flex h-[calc(100vh-57px)] flex-col">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white px-4 py-2 text-xs text-gray-500">
-            <span>{job?.questionName || "Exam results"}</span>
+            <div className="min-w-0">
+              <BackLink href={backHref}>{backLabel}</BackLink>
+              <p className="mt-0.5 truncate text-sm font-medium text-gray-800">
+                {contextLine || job?.questionName || "Exam results"}
+              </p>
+            </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              {result.gradingStatus === "pending" && (
+                <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-orange-700">
+                  Grading…
+                </span>
+              )}
               {job?.id && (
                 <a
                   href={`/api/jobs/${job.id}/export`}
@@ -302,9 +349,11 @@ export function ExamsFlow({
                   Download CSV
                 </a>
               )}
-              <Link href="/exams" className="font-medium text-gray-600 hover:underline">
-                New mapping
-              </Link>
+              {!examContext && (
+                <Link href="/exams" className="font-medium text-gray-600 hover:underline">
+                  New mapping
+                </Link>
+              )}
               <input
                 ref={mapNewInputRef}
                 type="file"
@@ -314,25 +363,33 @@ export function ExamsFlow({
                   const f = e.target.files?.[0];
                   e.target.value = "";
                   if (!f || !job?.questionSetId) return;
+                  const err = uploadFileError(f);
+                  if (err) {
+                    setError(err);
+                    return;
+                  }
+                  setError(null);
                   void start({ mode: "saved", questionSetId: job.questionSetId, answer: f });
                 }}
               />
-              <button
-                type="button"
-                disabled={busy || !job?.questionSetId}
-                title={
-                  job?.questionSetId
-                    ? "Reuse this question paper; upload only a new answer sheet"
-                    : "Question set not saved on this job yet"
-                }
-                onClick={() => mapNewInputRef.current?.click()}
-                className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {busy ? "Uploading…" : "Map a new answer sheet"}
-              </button>
+              {!examContext && (
+                <button
+                  type="button"
+                  disabled={busy || !job?.questionSetId}
+                  title={
+                    job?.questionSetId
+                      ? "Reuse this question paper; upload only a new answer sheet"
+                      : "Question set not saved on this job yet"
+                  }
+                  onClick={() => mapNewInputRef.current?.click()}
+                  className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {busy ? "Uploading…" : "Map a new answer sheet"}
+                </button>
+              )}
             </div>
           </div>
-          {job?.questionSetId && (
+          {!examContext && job?.questionSetId && (
             <p className="border-b border-orange-100 bg-orange-50 px-4 py-2 text-xs text-orange-900">
               Same question paper is saved. Use <strong>Map a new answer sheet</strong> to grade
               another student without re-extracting questions.
@@ -397,6 +454,18 @@ export function ExamsFlow({
                 mobileTab === "sheet" ? "block" : "hidden md:block"
               }`}
             >
+              {drawMode && (
+                <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2 bg-gray-950/90 px-4 py-2 text-xs text-white">
+                  <span>Drag on the sheet to draw the answer region</span>
+                  <button
+                    type="button"
+                    onClick={() => setDrawMode(false)}
+                    className="rounded-full border border-white/40 px-2.5 py-0.5 font-medium hover:bg-white/10"
+                  >
+                    Cancel (Esc)
+                  </button>
+                </div>
+              )}
               <AnswerSheetViewer
                 result={result}
                 selectedQuestionId={selectedQ}
@@ -435,7 +504,8 @@ export function ExamsFlow({
             </div>
           </div>
 
-          {reviewAnswerId && (
+          {/* Hidden while drawing — the full-screen dialog would swallow the drag */}
+          {reviewAnswerId && !drawMode && (
             <MappingCorrection
               result={result}
               answerId={reviewAnswerId}

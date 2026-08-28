@@ -2,12 +2,7 @@
 
 import type { AnalysisResult } from "@/lib/types";
 import { displayQuestionLabel } from "@/lib/questions/postprocess";
-
-const REVIEW_STATUSES = ["unmatched", "unlabelled", "ambiguous"] as const;
-
-export function needsReviewStatus(status: string) {
-  return (REVIEW_STATUSES as readonly string[]).includes(status);
-}
+import { needsReviewStatus } from "@/lib/map-answers";
 
 export function UnmatchedPanel({
   result,

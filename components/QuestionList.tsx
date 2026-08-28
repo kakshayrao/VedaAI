@@ -2,6 +2,7 @@
 
 import type { AnalysisResult, Question } from "@/lib/types";
 import { displayQuestionLabel } from "@/lib/questions/postprocess";
+import { needsReviewStatus } from "@/lib/map-answers";
 
 function scorePill(result: AnalysisResult, q: Question) {
   const g = result.grading?.[q.id];
@@ -57,9 +58,7 @@ export function QuestionList({
           const open = expanded.has(q.id) || selected;
           const feedback = result.grading?.[q.id]?.feedback;
           const mapped = result.answers.find((a) => a.mapping.questionId === q.id);
-          const review =
-            mapped &&
-            ["ambiguous", "unmatched", "unlabelled"].includes(mapped.mapping.status);
+          const review = mapped && needsReviewStatus(mapped.mapping.status);
           return (
             <li key={q.id}>
               <button

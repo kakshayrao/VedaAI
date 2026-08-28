@@ -1,6 +1,7 @@
 "use client";
 
 import type { StudentAnswer } from "@/lib/types";
+import { needsReviewStatus } from "@/lib/map-answers";
 
 export function AnswerPreviewCard({
   answer,
@@ -34,7 +35,7 @@ export function AnswerPreviewCard({
             ? "? Unidentified answer"
             : "? Unmatched";
 
-  const review = status === "ambiguous" || status === "unmatched" || status === "unlabelled";
+  const review = needsReviewStatus(status);
 
   return (
     <div

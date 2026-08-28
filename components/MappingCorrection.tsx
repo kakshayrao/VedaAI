@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { AnalysisResult, Question } from "@/lib/types";
 import { displayQuestionLabel } from "@/lib/questions/postprocess";
 
@@ -17,6 +18,15 @@ export function MappingCorrection({
   onStartDraw: () => void;
 }) {
   const ans = result.answers.find((a) => a.id === answerId);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   if (!ans) return null;
 
   const statusHint =
@@ -27,11 +37,24 @@ export function MappingCorrection({
         : "Could not match this answer";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Remap answer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">Remap answer</h3>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-gray-400 hover:text-gray-600"
+          >
             ×
           </button>
         </div>

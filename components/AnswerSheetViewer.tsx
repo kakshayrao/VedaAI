@@ -5,6 +5,8 @@ import { RegionDrawer } from "@/components/RegionDrawer";
 import type { AnalysisResult, AnswerRegion, StudentAnswer } from "@/lib/types";
 import { displayQuestionLabel } from "@/lib/questions/postprocess";
 import { bodyRegions } from "@/lib/answers/merge-blocks";
+import { needsReviewStatus } from "@/lib/map-answers";
+import { boxToPercent, polygonPointsInBox } from "@/lib/regions";
 
 export function AnswerSheetViewer({
   result,
@@ -114,17 +116,6 @@ export function AnswerSheetViewer({
   );
 }
 
-/** Remap page-absolute polygon [y,x] into bbox-local % for SVG inside the box. */
-function polygonPointsInBox(
-  polygon: [number, number][],
-  box: [number, number, number, number]
-): string {
-  const [ymin, xmin, ymax, xmax] = box;
-  const h = ymax - ymin || 1;
-  const w = xmax - xmin || 1;
-  return polygon.map(([y, x]) => `${((x - xmin) / w) * 100},${((y - ymin) / h) * 100}`).join(" ");
-}
-
 function Overlay({
   answers,
   page,
@@ -150,18 +141,12 @@ function Overlay({
           .map((r, i) => {
             const q = result.questions.find((x) => x.id === ans.mapping.questionId);
             const label = q ? displayQuestionLabel(q) : ans.detectedLabel || "?";
-            const review = ["unmatched", "unlabelled", "ambiguous"].includes(ans.mapping.status);
+            const review = needsReviewStatus(ans.mapping.status);
             const active =
               selectedAnswerId === ans.id ||
               (!!selectedQuestionId && ans.mapping.questionId === selectedQuestionId);
-            const [ymin, xmin, ymax, xmax] = r.box;
             const hasPoly = !!(r.polygon && r.polygon.length > 2);
-            const style = {
-              top: `${(ymin / 1000) * 100}%`,
-              left: `${(xmin / 1000) * 100}%`,
-              height: `${((ymax - ymin) / 1000) * 100}%`,
-              width: `${((xmax - xmin) / 1000) * 100}%`,
-            };
+            const style = boxToPercent(r.box);
             const tone = review
               ? active
                 ? "border-amber-500 bg-amber-400/30 ring-2 ring-amber-400/60"
