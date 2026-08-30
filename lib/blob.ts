@@ -63,13 +63,20 @@ export async function storeFile(
       "BLOB_READ_WRITE_TOKEN is required on Vercel. Enable Blob storage and set the token."
     );
   }
-  const blob = await put(key, buf, {
-    access: "public",
-    contentType,
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  });
-  return blob.url;
+
+  try {
+    const blob = await put(key, buf, {
+      access: "public",
+      contentType,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+    });
+    return blob.url;
+  } catch {
+    const fp = await localPath(key);
+    await writeFile(fp, buf);
+    return `/api/local-files/${key}`;
+  }
 }
 
 export async function storeJson(key: string, value: unknown): Promise<string> {
@@ -85,9 +92,22 @@ export async function resolveUrl(key: string): Promise<string | null> {
       return null;
     }
   }
-  const { blobs } = await list({ prefix: key, limit: 20 });
-  const exact = blobs.find((b) => b.pathname === key);
-  return exact?.url ?? blobs[0]?.url ?? null;
+
+  try {
+    const { blobs } = await list({ prefix: key, limit: 20 });
+    const exact = blobs.find((b) => b.pathname === key);
+    if (exact?.url) return exact.url;
+    if (blobs[0]?.url) return blobs[0].url;
+  } catch {
+    // fall through to local storage fallback below
+  }
+
+  try {
+    await readFile(await localPath(key));
+    return `/api/local-files/${key}`;
+  } catch {
+    return null;
+  }
 }
 
 export async function readJson<T>(keyOrUrl: string): Promise<T | null> {
@@ -108,7 +128,13 @@ export async function readJson<T>(keyOrUrl: string): Promise<T | null> {
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
-    return null;
+    const fallbackKey = keyOrUrl.replace(/^\/api\/local-files\//, "");
+    try {
+      const raw = await readFile(await localPath(fallbackKey), "utf8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -122,9 +148,15 @@ export async function readBytes(keyOrUrl: string): Promise<Buffer> {
     const key = keyOrUrl.replace(/^\/api\/local-files\//, "");
     return readFile(await localPath(key));
   }
-  const url = await resolveUrl(keyOrUrl);
-  if (!url) throw new Error(`Missing blob ${keyOrUrl}`);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`fetch failed ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+
+  try {
+    const url = await resolveUrl(keyOrUrl);
+    if (!url) throw new Error(`Missing blob ${keyOrUrl}`);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    const key = keyOrUrl.replace(/^\/api\/local-files\//, "");
+    return readFile(await localPath(key));
+  }
 }

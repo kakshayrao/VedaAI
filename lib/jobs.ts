@@ -1,4 +1,4 @@
-import { readdir } from "fs/promises";
+import { readdir, readFile } from "fs/promises";
 import path from "path";
 import { list } from "@vercel/blob";
 import { isLocalStorage, jobKey, readJson, storeJson } from "./blob";
@@ -7,7 +7,15 @@ import type { JobState, JobSummary } from "./types";
 const LOCAL_ROOT = path.join(process.cwd(), "tmp", "jobs");
 
 export async function getJob(jobId: string): Promise<JobState | null> {
-  return readJson<JobState>(jobKey(jobId, "job.json"));
+  const job = await readJson<JobState>(jobKey(jobId, "job.json"));
+  if (job) return job;
+
+  try {
+    const raw = await readFile(path.join(LOCAL_ROOT, jobId, "job.json"), "utf8");
+    return JSON.parse(raw) as JobState;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveJob(job: JobState): Promise<JobState> {
