@@ -67,6 +67,7 @@ export function ExamsFlow({
   const [mobileTab, setMobileTab] = useState<"questions" | "sheet">("questions");
   const [reviewAnswerId, setReviewAnswerId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(false);
+  const jobNotFoundCountRef = useRef(0);
 
   useEffect(() => {
     if (!showPastJobs || phase !== "upload") return;
@@ -130,6 +131,11 @@ export function ExamsFlow({
       if (!res.ok) {
         if (cancelled) return;
         if (res.status === 404) {
+          jobNotFoundCountRef.current += 1;
+          if (jobNotFoundCountRef.current < 3) {
+            setError("Still saving the job. Please wait a moment…");
+            return;
+          }
           setError("This job was not created successfully in storage. Please upload the files again.");
           setPhase("upload");
           setJob(null);
@@ -139,6 +145,7 @@ export function ExamsFlow({
         setError("Job status is temporarily unavailable. Please try again.");
         return;
       }
+      jobNotFoundCountRef.current = 0;
       const data = (await res.json()) as JobState;
       setJob(data);
       if (data.status === "ready" && data.result) {
