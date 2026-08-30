@@ -36,9 +36,7 @@ async function listJobIds(): Promise<string[]> {
 
   if (isLocalStorage()) return [...localIds];
 
-  // ponytail: prefix scan; fine until job volume is large.
-  // Also include local-fallback jobs because Vercel can still have a valid local copy
-  // when Blob is empty, misconfigured, or temporarily unavailable.
+  // On Vercel, tmp/ is not a durable store; do not trust it for job lookup.
   const { blobs } = await list({ prefix: "", limit: 500 });
   const ids = new Set<string>(localIds);
   for (const b of blobs) {

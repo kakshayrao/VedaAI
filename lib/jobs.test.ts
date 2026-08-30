@@ -21,7 +21,7 @@ describe("listJobs", () => {
   });
 
   it("includes local fallback jobs even when Vercel Blob is empty", async () => {
-    process.env.VERCEL = "1";
+    delete process.env.VERCEL;
     delete process.env.BLOB_READ_WRITE_TOKEN;
 
     listMock.mockResolvedValue({ blobs: [] });

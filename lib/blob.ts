@@ -6,12 +6,11 @@ const LOCAL_JOBS = path.join(process.cwd(), "tmp", "jobs");
 const LOCAL_TMP = path.join(process.cwd(), "tmp");
 
 export function isLocalStorage(): boolean {
-  // Prefer local files whenever Blob is not actually configured.
-  // This keeps upload + job status working during setup and when the Vercel store is empty.
+  // Local fallback is only for local/dev work. On Vercel, tmp/ is not durable across requests,
+  // so silently writing there hides a real storage problem and causes the 200->404 job jumps seen in production.
   return (
     process.env.STORAGE_MODE === "local" ||
-    !process.env.BLOB_READ_WRITE_TOKEN ||
-    !process.env.BLOB_STORE_ID
+    (!process.env.VERCEL && (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID))
   );
 }
 
@@ -63,6 +62,11 @@ export async function storeFile(
     return `/api/local-files/${key}`;
   }
   if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID) {
+    if (process.env.VERCEL) {
+      throw new Error(
+        "Vercel Blob is not configured. Set BLOB_READ_WRITE_TOKEN and BLOB_STORE_ID before mapping."
+      );
+    }
     const fp = await localPath(key);
     await writeFile(fp, buf);
     return `/api/local-files/${key}`;
@@ -77,6 +81,11 @@ export async function storeFile(
     });
     return blob.url;
   } catch {
+    if (process.env.VERCEL) {
+      throw new Error(
+        "Blob write failed on Vercel. The job was not persisted; please verify the Blob token and store."
+      );
+    }
     const fp = await localPath(key);
     await writeFile(fp, buf);
     return `/api/local-files/${key}`;
