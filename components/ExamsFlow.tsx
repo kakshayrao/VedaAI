@@ -127,7 +127,18 @@ export function ExamsFlow({
     let cancelled = false;
     const tick = async () => {
       const res = await fetch(`/api/jobs/${job.id}`);
-      if (!res.ok || cancelled) return;
+      if (!res.ok) {
+        if (cancelled) return;
+        if (res.status === 404) {
+          setError("This job was not created successfully in storage. Please upload the files again.");
+          setPhase("upload");
+          setJob(null);
+          router.replace("/exams");
+          return;
+        }
+        setError("Job status is temporarily unavailable. Please try again.");
+        return;
+      }
       const data = (await res.json()) as JobState;
       setJob(data);
       if (data.status === "ready" && data.result) {
@@ -152,7 +163,7 @@ export function ExamsFlow({
       cancelled = true;
       clearInterval(id);
     };
-  }, [phase, job?.id]);
+  }, [phase, job?.id, router]);
 
   const resume = async () => {
     if (!job?.id) return;
