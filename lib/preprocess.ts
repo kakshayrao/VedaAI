@@ -9,10 +9,29 @@ type PreprocessResult = {
   mimeType: string;
 };
 
-async function getSharp(): Promise<any | null> {
+type SharpPipeline = {
+  rotate: () => SharpPipeline;
+  resize: (opts: {
+    width?: number;
+    height?: number;
+    fit?: string;
+    withoutEnlargement?: boolean;
+  }) => SharpPipeline;
+  png: () => SharpPipeline;
+  metadata: () => Promise<{ width?: number; height?: number }>;
+  toBuffer: (opts: { resolveWithObject: true }) => Promise<{ data: Buffer; info: { width: number; height: number } }>;
+};
+
+type SharpModule = {
+  (input: Buffer): SharpPipeline;
+  default?: SharpModule;
+};
+
+async function getSharp(): Promise<SharpModule | null> {
   try {
     const mod = await import("sharp");
-    return (mod as any).default ?? mod;
+    const loaded = mod as unknown as { default?: SharpModule } & SharpModule;
+    return loaded.default ?? loaded;
   } catch {
     return null;
   }
