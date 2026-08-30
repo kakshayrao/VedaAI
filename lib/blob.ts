@@ -6,9 +6,13 @@ const LOCAL_JOBS = path.join(process.cwd(), "tmp", "jobs");
 const LOCAL_TMP = path.join(process.cwd(), "tmp");
 
 export function isLocalStorage(): boolean {
-  // Vercel FS is ephemeral — never treat tmp/ as durable there
-  if (process.env.VERCEL) return false;
-  return process.env.STORAGE_MODE === "local" || !process.env.BLOB_READ_WRITE_TOKEN;
+  // Prefer local files whenever Blob is not actually configured.
+  // This keeps upload + job status working during setup and when the Vercel store is empty.
+  return (
+    process.env.STORAGE_MODE === "local" ||
+    !process.env.BLOB_READ_WRITE_TOKEN ||
+    !process.env.BLOB_STORE_ID
+  );
 }
 
 export function jobKey(jobId: string, name: string) {
@@ -58,10 +62,10 @@ export async function storeFile(
     await writeFile(fp, buf);
     return `/api/local-files/${key}`;
   }
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error(
-      "BLOB_READ_WRITE_TOKEN is required on Vercel. Enable Blob storage and set the token."
-    );
+  if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.BLOB_STORE_ID) {
+    const fp = await localPath(key);
+    await writeFile(fp, buf);
+    return `/api/local-files/${key}`;
   }
 
   try {

@@ -24,17 +24,23 @@ export async function saveJob(job: JobState): Promise<JobState> {
 }
 
 async function listJobIds(): Promise<string[]> {
-  if (isLocalStorage()) {
-    try {
-      const entries = await readdir(LOCAL_ROOT, { withFileTypes: true });
-      return entries.filter((e) => e.isDirectory()).map((e) => e.name);
-    } catch {
-      return [];
+  const localIds = new Set<string>();
+  try {
+    const entries = await readdir(LOCAL_ROOT, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) localIds.add(entry.name);
     }
+  } catch {
+    // local jobs are optional; some deployments only use Blob
   }
-  // ponytail: prefix scan; fine until job volume is large
+
+  if (isLocalStorage()) return [...localIds];
+
+  // ponytail: prefix scan; fine until job volume is large.
+  // Also include local-fallback jobs because Vercel can still have a valid local copy
+  // when Blob is empty, misconfigured, or temporarily unavailable.
   const { blobs } = await list({ prefix: "", limit: 500 });
-  const ids = new Set<string>();
+  const ids = new Set<string>(localIds);
   for (const b of blobs) {
     const m = b.pathname.match(/^([^/]+)\/job\.json$/);
     if (m) ids.add(m[1]);
